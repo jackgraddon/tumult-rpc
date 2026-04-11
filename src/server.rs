@@ -327,9 +327,9 @@ impl RpcServer {
         info!("Process scanner started (interval: {:?})", interval);
 
         loop {
-            let detected = self.process_scanner.scan().await;
+            let result = self.process_scanner.scan().await;
 
-            for game in detected {
+            for game in result.detected {
                 // Create activity message for detected game
                 let msg = ActivityMessage {
                     activity: Some(Activity {
@@ -343,6 +343,16 @@ impl RpcServer {
                     }),
                     pid: game.pid,
                     socket_id: game.id.clone(),
+                };
+                self.bridge.send_activity(msg).await;
+            }
+
+            for game in result.stopped {
+                // Create activity message for stopped game
+                let msg = ActivityMessage {
+                    activity: None,
+                    pid: game.pid,
+                    socket_id: game.id,
                 };
                 self.bridge.send_activity(msg).await;
             }

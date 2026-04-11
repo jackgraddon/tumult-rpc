@@ -39,6 +39,20 @@ pub struct DetectedGame {
     pub start_time: i64,
 }
 
+/// Stopped game info
+#[derive(Debug, Clone)]
+pub struct StoppedGame {
+    pub id: String,
+    pub pid: Pid,
+}
+
+/// Result of a process scan
+#[derive(Debug, Clone)]
+pub struct ScanResult {
+    pub detected: Vec<DetectedGame>,
+    pub stopped: Vec<StoppedGame>,
+}
+
 impl ProcessScanner {
     pub fn new(db_url: String, enable_updates: bool) -> Self {
         Self {
@@ -78,7 +92,7 @@ impl ProcessScanner {
     }
 
     /// Scan for running games
-    pub async fn scan(&self) -> Vec<DetectedGame> {
+    pub async fn scan(&self) -> ScanResult {
         // Refresh database periodically (every hour) if enabled
         if self.enable_updates {
             if let Some(last_update) = *self.last_db_update.read().await {
@@ -141,23 +155,30 @@ impl ProcessScanner {
         }
 
         // Find games that stopped
-        let stopped: Vec<String> = cache
+        let stopped_ids: Vec<String> = cache
             .timestamps
             .keys()
             .filter(|id| !current_ids.contains(id))
             .cloned()
             .collect();
 
-        for id in stopped {
+        let mut stopped = Vec::new();
+        for id in stopped_ids {
             if let Some(name) = cache.names.get(&id) {
                 info!("Lost game: {}", name);
+            }
+            if let Some(pid) = cache.pids.get(&id) {
+                stopped.push(StoppedGame {
+                    id: id.clone(),
+                    pid: *pid,
+                });
             }
             cache.timestamps.remove(&id);
             cache.names.remove(&id);
             cache.pids.remove(&id);
         }
 
-        detected
+        ScanResult { detected, stopped }
     }
 
     /// Get PID for a stopped game
@@ -171,7 +192,7 @@ fn generate_path_variants(path: &str) -> Vec<String> {
     let mut variants = Vec::new();
     let parts: Vec<&str> = path.split('/').collect();
 
-    for i in 1..parts.len() {
+    for i in 1..=parts.len() {
         variants.push(parts[parts.len() - i..].join("/"));
     }
 
